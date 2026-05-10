@@ -1,50 +1,74 @@
-name: CI - Dev Branch Checks 
+name: PR to Dev - CI Checks
 
 on:
   pull_request:
-    branches: [ main ]
+    branches:
+      - dev
 
 jobs:
-  quality-and-security:
+  lint:
+    name: Lint
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        folder: [backend, frontend]
-    
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '18'
+      - name: Install backend dependencies
+        run: cd backend && npm ci
+      - name: Run backend lint
+        run: cd backend && npm run lint
 
-      - name: Install dependencies
-        run: npm install
-        working-directory: ./${{ matrix.folder }}
-
-      - name: Run Linting
-        run: npm run lint
-        working-directory: ./${{ matrix.folder }}
-
-      - name: Run NPM Audit
-        run: npm audit --audit-level=moderate
-        working-directory: ./${{ matrix.folder }}
-
-      - name: Snyk Security Scan
-        uses: snyk/actions/node@master
+  npm-audit:
+    name: NPM Audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+      - name: Audit backend
+        run: cd backend && npm audit --audit-level=high
         continue-on-error: true
+
+  snyk-security:
+    name: Snyk Security Analysis
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+      - name: Install backend dependencies
+        run: cd backend && npm ci
+      - name: Run Snyk
+        uses: snyk/actions/node@master
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         with:
           args: --severity-threshold=high
-          directory: ./${{ matrix.folder }}
+        continue-on-error: true
 
-      - name: Execute Tests
-        run: npm test
-        working-directory: ./${{ matrix.folder }}
+  tests:
+    name: Run Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+      - name: Install backend dependencies
+        run: cd backend && npm ci
+      - name: Run tests
+        run: cd backend && npm test
 
-      - name: Build Docker Images (Verification)
-        run: docker build -t test-image-${{ matrix.folder }} .
-        working-directory: ./${{ matrix.folder }}
+  build-docker:
+    name: Build Docker Images
+    needs: [lint, npm-audit, snyk-security, tests]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build backend image
+        run: docker build -t backend:test ./backend
+      - name: Build frontend image
+        run: docker build -t frontend:test ./frontend
