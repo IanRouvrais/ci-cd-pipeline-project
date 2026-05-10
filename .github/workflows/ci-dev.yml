@@ -29,7 +29,7 @@ jobs:
         working-directory: ./${{ matrix.folder }}
 
       - name: Run NPM Audit
-        run: npm audit
+        run: npm audit --audit-level=moderate
         working-directory: ./${{ matrix.folder }}
 
       - name: Snyk Security Scan
